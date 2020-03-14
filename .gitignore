@@ -1,3 +1,6 @@
 **/test/
 **/tools/
 upload.sh
+*.iso
+*.bin
+*.o
