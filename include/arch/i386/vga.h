@@ -39,6 +39,9 @@ void vga_blit_buf(uint8_t* buf, uint16_t x, uint16_t y, uint16_t w, uint16_t h, 
 void vga_blit(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const void* pixels);
 void vga_blit_direct(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const void* pixels);
 
+void vga_blit_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const void* pixels);
+void vga_blit_sprite(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t fgc, const void* pixels);
+
 void vga_fill_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t cc);
 void vga_fill_rect_direct(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t cc);
 void vga_fill_rect_buf(uint8_t* buf, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t cc);

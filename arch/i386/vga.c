@@ -104,6 +104,10 @@ static void set_curmode(enum VGA_Mode m) {
 	hbuf = getbuf();	
 }
 
+inline static size_t compute_scraddr(uint16_t x, uint16_t y) {
+	return y * curmode.pitch + x * curmode.depth;
+}
+
 int vga_init(void) {
 	set_curmode(VGA_80x25_TM);
 	hbuf = (uint8_t*)0xb8000;
@@ -177,7 +181,7 @@ void ascii_blit_buf(uint8_t* buf, uint16_t x, uint16_t y, unsigned char ch, cons
 			const size_t addr = (yc * h + y0) * (w * 16) + (xc * w + x0);
 			const uint8_t byte = font->bitmap[addr / 8 + 1];
 			const bool val = byte & (0x80 >> (addr & 7));
-			const size_t scraddr = (y0 + y) * curmode.pitch + ((x0 + x) * curmode.depth);
+			const size_t scraddr = compute_scraddr(x0 + x, y0 + y);
 			buf[scraddr] = val ? fgc : bgc;
 		}
 	}
@@ -198,8 +202,38 @@ void vga_fill_rect_direct(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_
 void vga_fill_rect_buf(uint8_t* buf, uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t cc) {
 	for (uint16_t y0 = 0; y0 < h; ++y0) {
 		for (uint16_t x0 = 0; x0 < w; ++x0) {
-			const size_t pos = (y + y0) * curmode.pitch + ((x + x0) * curmode.depth);
-			buf[pos] = cc;
+			buf[compute_scraddr(x0 + x, y0 + y)] = cc;
 		}
 	}
+}
+static uint8_t read_px(uint16_t x, uint16_t y) {
+	return buffer[y * curmode.pitch + x * curmode.depth];
+}
+void vga_blit_transparent(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const void* pixels) {
+	const uint16_t p = w;
+	if (x + w >= curmode.width) w = curmode.width - x;
+	if (y + h >= curmode.height) h = curmode.height - y;
+	uint8_t* buf = buffering ? buffer : hbuf;
+	const uint8_t* px = (const uint8_t*)pixels;
+	for (uint16_t y0 = 0; y0 < h; ++y0) {
+		for (uint16_t x0 = 0; x0 < w; ++x0) {
+			const uint8_t val = px[y0 * p + x0];
+			if (val != 0xff) buf[compute_scraddr(x0 + x, y0 + y)] = val;
+		}
+	}
+}
+void vga_blit_sprite(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t fgc, const void* pixels) {
+	const uint16_t p = w;
+	if (x + w >= curmode.width) w = curmode.width - x;
+	if (y + h >= curmode.height) h = curmode.height - y;
+	const uint8_t* px = (const uint8_t*)pixels;
+	uint8_t* buf = buffering ? buffer : hbuf;
+	for (uint16_t y0 = 0; y0 < h; ++y0) {
+		for (uint16_t x0 = 0; x0 < w; ++x0) {
+			const size_t saddr = y0 * p + x0;
+			const bool val = px[saddr / 8] & (0x80 >> (saddr & 7));
+			if (val) buf[compute_scraddr(x0 + x, y0 + y)] = fgc;			
+		}
+	}
+
 }

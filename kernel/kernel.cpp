@@ -86,6 +86,16 @@ void no_task_handler(void) {
 #include "string.h"
 #include "ascii.h"
 
+static uint8_t cursor_bitmap[8] = {
+	0b11111111,
+	0b11111111,
+	0b11110000,
+	0b11110000,
+	0b11001100,
+	0b11001100,
+	0b11000011,
+	0b11000011,
+};
 static void vga_updater() {
 	static uint8_t surface[80 * 50];
 	static uint8_t fgc = 0xf, bgc = 0x0;
@@ -131,7 +141,8 @@ static void vga_updater() {
 				vga_fill_rect(x * 4, y * 4, 4, 4, surface[y * 80 + x]);
 			}
 		}
-		ascii_blit(mouse->posx, mouse->posy, 'A', &ascii8, fgc, 0x00);
+		vga_blit_sprite(mouse->posx, mouse->posy, 8, 8, fgc, cursor_bitmap);
+		//ascii_blit(mouse->posx, mouse->posy, 'A', &ascii8, fgc, 0x00);
 		vga_render();
 	}
 }
@@ -147,4 +158,4 @@ static void ktest() {
 	//taskmgr_add(taskmgr_create_task(task1));
 	//taskmgr_add(taskmgr_create_task(task2));
 	taskmgr_add(taskmgr_create_task(vga_updater));
-}
+}	
