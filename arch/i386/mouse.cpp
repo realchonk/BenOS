@@ -1,12 +1,7 @@
-#include "arch/i386/drivers.hpp"
 #include "arch/i386/port.h"
 #include "terminal.hpp"
+#include "driver.hpp"
 #include "printk.h"
-
-extern "C"
-void on_mousemove(float x, float y, float dx, float dy);
-extern "C"
-void on_mousebutton(float x, float y, int btn, bool pressed);
 
 namespace io {
 	static void kbc_send_cmd(uint8_t cmd) {
@@ -26,9 +21,7 @@ namespace io {
 		return inb(0x60);
 	}
 	MouseDriver::MouseDriver() noexcept
-		: InterruptHandler(0x2c) {
-		
-	}
+		: InterruptHandler(0x2c), Driver(DriverType::MOUSE) {}
 	bool MouseDriver::setup() noexcept {
 		enabled = reset() != -1;
 		registerSelf();
@@ -73,12 +66,12 @@ namespace io {
 			else if (posx >= terminal::get_width()) posx = terminal::get_width() - 1;
 			if (posy < 0) posy = 0;
 			else if (posy >= terminal::get_height()) posy = terminal::get_height() - 1;
-			on_mousemove(posx, posy, dx, dy);
+			if (on_mousemove) on_mousemove(posx, posy, dx, dy);
 		}
 		for (uint8_t i = 0; i < 3; ++i) {
 			const uint8_t mask = 1 << i;
 			if ((buffer[0] & mask) != (buttons & mask)) {
-				on_mousebutton(posx, posy, i, buffer[0] & mask);
+				if (on_mousebutton) on_mousebutton(posx, posy, i, buffer[0] & mask);
 			}
 		}
 		buttons = buffer[0];

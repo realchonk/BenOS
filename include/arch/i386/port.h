@@ -1,5 +1,6 @@
 #ifndef FILE_ARCH_PORT_H
 #define FILE_ARCH_PORT_H
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -33,6 +34,15 @@ inline static uint32_t inl(uint16_t port) {
 	volatile uint32_t data;
 	asm volatile("inl %1, %0" : "=a"(data) : "Nd"(port));
 	return data;
+}
+
+inline static void cmos_write(bool nmi, uint8_t reg, uint8_t val) {
+	outb(0x70, (nmi << 7) | (reg & 0x7f));
+	outb(0x71, val);
+}
+inline static uint8_t cmos_read(bool nmi, uint8_t reg) {
+	outb(0x70, (nmi << 7) | (reg & 0x7f));
+	return inb(0x71);
 }
 
 #ifdef __cplusplus

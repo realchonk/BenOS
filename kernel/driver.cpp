@@ -1,5 +1,8 @@
+#include "string.h"
 #include "driver.hpp"
 #include "util.h"
+
+#include "printk.h"
 
 namespace io {
 	static Driver* drivers[256]{};
@@ -30,7 +33,7 @@ namespace io {
 			Driver* driver = drivers[i];
 			if (driver) {
 				const int n = driver->reset();
-
+				(void)n;
 			}
 		}
 	}
@@ -40,7 +43,14 @@ namespace io {
 			if (driver) driver->destroy();	
 		}
 	}
+	Driver* DriverManager::find(DriverType type) {
+		for (size_t i = 0; i < arraylen(drivers); ++i) {
+			Driver* const drv = drivers[i];
+			if ((drv != nullptr) && (drv->type == type)) return drv;
+		}
+		return nullptr;
+	}	
 
-	Driver* DriverManager::get(size_t ID) { return nullptr; }
-	size_t DriverManager::num_drivers() {return 0;}
+	Driver* DriverManager::get(size_t ID) { return drivers[ID]; }
+	size_t DriverManager::num_drivers() { return 256; }
 }

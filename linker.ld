@@ -2,7 +2,7 @@ ENTRY(_start)
 
 SECTIONS {
 	. = 1M;
-
+	__kernel_start = .;
 	.text BLOCK(4K) : ALIGN(4K) {
 		*(.multiboot)
 		*(.text)
@@ -20,5 +20,7 @@ SECTIONS {
 	.heap BLOCK(4K) : ALIGN(4K) {
 		*(.heap)
 	}
+	. = ALIGN(4K);
+	__kernel_end = .;
 }
 

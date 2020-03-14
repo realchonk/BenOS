@@ -1,13 +1,13 @@
 ARCH=i386
 ARCHDIR=arch/$(ARCH)
 
-CC=i686-elf-gcc
-CPP=i686-elf-g++
-LD=i686-elf-ld -O3
+CC=i686-elf-gcc -g -O3
+CPP=i686-elf-g++ -g -O3
+LD=i686-elf-ld -g -O3
 AS=nasm
 
 INCLUDES=-Iinclude -Iinclude/libc
-CFLSHARED=-ffreestanding -Wall -Wextra -fstack-protector -fno-builtin -fno-leading-underscore -mfpmath=387
+CFLSHARED=-ffreestanding -Wall -Wextra -fstack-protector -fno-builtin -fno-leading-underscore
 CFLAGS=-std=gnu11 $(CFLSHARED) $(INCLUDES)
 CPPFLAGS=-std=gnu++11 -fno-exceptions -fno-rtti -fno-use-cxa-atexit $(CFLSHARED) $(INCLUDES)
 LDFLAGS=-melf_i386 -nostdlib -L.
@@ -25,11 +25,7 @@ objects_kernel_c  =$(patsubst kernel/%.c,kernel/%.o,$(wildcard kernel/*.c))
 objects_kernel_cpp=$(patsubst kernel/%.cpp,kernel/%.o,$(wildcard kernel/*.cpp))
 objects_kernel=$(objects_kernel_c) $(objects_kernel_cpp)
 
-objects_lib_c  =$(patsubst lib/%.c,lib/%.o,$(wildcard lib/*.c))
-objects_lib_cpp=$(patsubst lib/%.cpp,lib/%.o,$(wildcard lib/*.cpp))
-objects_lib=$(objects_lib_c) $(objects_lib_cpp)
-
-objects=crti.o $(objects_arch) $(objects_kernel) $(objects_lib) crtn.o
+objects=crti.o $(objects_arch) $(objects_kernel) crtn.o
 
 kernel.bin: $(objects)
 	$(LD) -Tlinker.ld -o $@ $(LDFLAGS) $(CRT_BEGIN) $(objects) $(CRT_END) -lgcc
@@ -50,16 +46,11 @@ kernel/%.o: kernel/%.cpp
 	$(CPP) -c -o $@ $< $(CPPFLAGS)
 
 
-lib/%.o: lib/%.c
-	$(CC) -c -o $@ $< $(CFLAGS)
-lib/%.o: lib/%.cpp
-	$(CPP) -c -o $@ $< $(CPPFLAGS)
-
 clean:
 	rm -rf $(objects) iso/
 
 run: kernel.bin
-	qemu-system-i386 -kernel kernel.bin -m 64M # -no-reboot-d int,cpu_reset
+	qemu-system-i386 -serial stdio -kernel kernel.bin -m 256M # -no-reboot-d int,cpu_reset
 runvbox: benos.iso
 	virtualbox --startvm BenOS
 

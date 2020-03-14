@@ -107,20 +107,25 @@ namespace mm {
 		else return ptr;
 	}
 
+	HeapManager* heapmgr;
 }
 extern "C" {
-	extern mm::HeapManager* heapmgr;
 	void* malloc(size_t num) {
-		return heapmgr ? heapmgr->allocate(num) : NULL;
+		return mm::heapmgr ? mm::heapmgr->allocate(num) : NULL;
 	}
 	void* calloc(size_t num, size_t size) {
 		void* ptr = malloc(num * size);
 		return ptr ? memset(ptr, 0, num * size) : NULL;
 	}
 	void* realloc(void* ptr, size_t num) {
-		return heapmgr ? heapmgr->reallocate(ptr, num) : NULL;
+		return mm::heapmgr ? mm::heapmgr->reallocate(ptr, num) : NULL;
 	}
 	void free(void* ptr) {
-		if (heapmgr) heapmgr->free(ptr);
+		if (mm::heapmgr) mm::heapmgr->free(ptr);
 	}
 }
+
+void* operator new(size_t size) { return malloc(size); }
+void* operator new[](size_t size) { return malloc(size); }
+void operator delete(void* ptr) { free(ptr); }
+void operator delete[](void* ptr) { free(ptr); }

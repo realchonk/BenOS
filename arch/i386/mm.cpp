@@ -1,10 +1,10 @@
 #include <stdint.h>
+#include "arch/i386/x86task.h"
 #include "arch/i386/port.h"
 #include "printk.h"
 #include "mm.h"
 
 namespace mm {
-	HeapManager* heapmgr;
 	struct SegDescriptor {
 		uint16_t limit_lo;
 		uint16_t base_lo;
@@ -17,6 +17,8 @@ namespace mm {
 		SegDescriptor nullSegment;
 		SegDescriptor codeSegment;
 		SegDescriptor dataSegment;
+		SegDescriptor ucodeSegment;
+		SegDescriptor udataSegment;
 		SegDescriptor tssSegment;
 	} gdt;
 
@@ -37,7 +39,7 @@ namespace mm {
 		seg.type = type;
 		return seg;
 	}
-	static uint32_t segdescriptor_base(const SegDescriptor seg) {
+	/*static uint32_t segdescriptor_base(const SegDescriptor seg) {
 		uint32_t base = 0;
 		base |= seg.base_lo;
 		base |= seg.base_hi << 16;
@@ -51,17 +53,27 @@ namespace mm {
 		if ((seg.flags_limit_hi & 0xc0) == 0xc0)
 			limit = (limit << 12) | 0xfff;
 		return limit;
-	}
-	uint16_t codeSegmentSelector() {
-		return (const uint8_t*)&gdt.codeSegment - (const uint8_t*)&gdt;
-	}
-	uint16_t dataSegmentSelector() {
-		return (const uint8_t*)&gdt.dataSegment - (const uint8_t*)&gdt;
+	}*/
+	extern "C" {
+		uint16_t i386_gdt_codeSegmentSelector(void) {
+			return (const volatile uint8_t*)&gdt.codeSegment - (const volatile uint8_t*)&gdt;
+		}
+		uint16_t i386_gdt_dataSegmentSelector(void) {
+			return (const volatile uint8_t*)&gdt.dataSegment - (const volatile uint8_t*)&gdt;
+		}
+		uint16_t i386_gdt_ucodeSegmentSelector(void) {
+			return (const volatile uint8_t*)&gdt.ucodeSegment - (const volatile uint8_t*)&gdt;
+		}
+		uint16_t i386_gdt_udataSegmentSelector(void) {
+			return (const volatile uint8_t*)&gdt.udataSegment - (const volatile uint8_t*)&gdt;
+		}
 	}
 	static int gdt_init(void) {
 		gdt.nullSegment = make_segdescriptor(0, 0, 0);
-		gdt.codeSegment = make_segdescriptor(0, 64*1024*1024, 0x9a);
-		gdt.dataSegment =  make_segdescriptor(0, 64*1024*1024, 0x92);
+		gdt.codeSegment = make_segdescriptor(0, 0xffffff, 0x9a);
+		gdt.dataSegment =  make_segdescriptor(0, 0xffffff, 0x92);
+		gdt.ucodeSegment = make_segdescriptor(0, 0xffffff, 0xfa);
+		gdt.udataSegment =  make_segdescriptor(0, 0xffffff, 0xf2);
 		gdt.tssSegment = make_segdescriptor(0, 0, 0);
 	 
 		const uint32_t i[2] = { sizeof(gdt) << 16, (uint32_t)&gdt };
@@ -87,7 +99,7 @@ namespace mm {
 	} __attribute__((packed));
 	typedef struct Gate Gate;
 
-	static Gate idt[256];
+	static volatile Gate idt[256];
 	static void set_idt_entry(uint8_t num, uint16_t cs, void(*handler)(), uint8_t previlege, uint8_t type) {
 		idt[num].handler_hi = ((uint32_t)handler) >> 16;
 		idt[num].handler_lo = ((uint32_t)handler) & 0xffff;
@@ -114,6 +126,7 @@ namespace mm {
 	extern void handle_ireq0x0D(void);
 	extern void handle_ireq0x0E(void);
 	extern void handle_ireq0x0F(void);
+	extern void handle_ireq0xA0(void);
 	extern void handle_excep0x00(void);
 	extern void handle_excep0x01(void);
 	extern void handle_excep0x02(void);
@@ -148,7 +161,7 @@ namespace mm {
 	extern void handle_excep0x1F(void);
 	}
 	static int idt_init(void) {
-		const uint32_t cs = codeSegmentSelector();
+		const volatile uint32_t cs = i386_gdt_codeSegmentSelector();
 		for (uint16_t i = 0x30; i < 0x100; ++i) {
 			set_idt_entry(i, cs, ignore_ireq, 0, 0xe);
 		}
@@ -201,6 +214,7 @@ namespace mm {
 		set_idt_entry(0x2d, cs, handle_ireq0x0D, 0, 0xe);
 		set_idt_entry(0x2e, cs, handle_ireq0x0E, 0, 0xe);
 		set_idt_entry(0x2f, cs, handle_ireq0x0F, 0, 0xe);
+		set_idt_entry(0xa0, cs, handle_ireq0xA0, 0, 0xe);
 
 		outb_slow(0x20, 0x11);
 		outb_slow(0xa0, 0x11);
@@ -217,7 +231,7 @@ namespace mm {
 		outb_slow(0x21, 0x00);
 		outb_slow(0xa1, 0x00);
 
-		const uint32_t i[2] = { (256 * sizeof(Gate) - 1) << 16, (uint32_t)&idt };
+		const volatile uint32_t i[2] = { (256 * sizeof(Gate) - 1) << 16, (uint32_t)&idt };
 		asm volatile("lidt (%0)" : : "p"((uint8_t*)i + 2));
 
 		return 0;
@@ -230,19 +244,27 @@ namespace mm {
 
 	static InterruptHandler* int_handlers[256];
 
+	extern "C" struct cpu_state* taskmgr_schedule(struct cpu_state* cpustate);
 	extern "C"
-	void handle_interrupt(uint32_t num) {
-		if (num == 0x6) panic("invalid opcode");
-		else if (num == 0x5) panic("out of bounds");
-		else if (num == 0xd) panic("general protection fault");
-		else if (num == 0xe) panic("page fault");
-		else if (num >= 0x20 && num < 0x30) {
+	struct cpu_state* handle_interrupt(uint32_t num, uint32_t err, struct cpu_state* cpu) {
+		//printk("i");
+		if (num >= 0x20 && num < 0x30) {
 			outb_slow(0x20, 0x20);
 			if (num >= 0x28) outb_slow(0xa0, 0x20);
 		}
+		switch (num) {
+		case 0x00: printk("%p: division by zero", cpu->eip); break;
+		case 0x06: panic("%p: invalid opcode", cpu->eip); break;
+		case 0x05: panic("%p: out of bounds", cpu->eip); break;
+		case 0x0d: panic("%p: general protection fault, err=%d", cpu->eip, err); break;
+		case 0x0e: panic("%p: page fault"); break;
+		case 0x20: cpu = taskmgr_schedule(cpu); break;
+		default:
+			if (int_handlers[num])
+				int_handlers[num]->handleInterrupt();
+		}
 
-		if (int_handlers[num]) int_handlers[num]->handleInterrupt();
-		else if (num != 0x20) printk("UNHANDLED INTERRUPT 0x%x\n", (int)num);
+		return cpu;
 	}
 
 
@@ -252,91 +274,16 @@ namespace mm {
 	void InterruptHandler::registerSelf() noexcept {
 		int_handlers[interrupt] = this;
 	}
-
-#define PDE_PRESENT		0x01
-#define PDE_RW			0x02
-#define PDE_USER		0x04
-#define PDE_WT			0x08
-#define PDE_CDIS		0x10
-#define PDE_ACCESSED	0x20
-#define PDE_GRAN		0x80
-
-#define PTE_PRESENT		0x01
-#define PTE_RW			0x02
-#define PTE_USER		0x04
-#define PTE_WT			0x08
-#define PTE_CDIS		0x10
-#define PTE_ACCESSED	0x20
-#define PTE_DIRTY		0x40
-#define PTE_GLOBAL		0x100
-
-
-	static uint32_t page_dir[1024] __attribute__((aligned(4096))) {};
-	static uint32_t page_tables[512][1024] __attribute__((aligned(4096))) {};
-
-	extern void load_page_dir(void* ptr);
-	extern void enable_paging(void);
-	static void mmu_init(void) {
-		for (int pd = 0; pd < 1024; ++pd) page_dir[pd] = 0x2;
-		for (int pd = 0; pd < 128; ++pd) {
-			for (int pt = 0; pt < 1024; ++pt) {
-				page_tables[pd][pt] = ((pd * 0x1000) + pt * 0x1000) | 3;
-			}
-			page_dir[pd] = (uint32_t)page_tables[pd] | 3;
-		}
-		load_page_dir(page_dir);
-		enable_paging();
-	}
-
-
-	/*uint32_t pdir[512]{};
-	static uint32_t ptbl[512][512]{};
-	inline static void flush_tlb_single(uint32_t addr) {
-		asm volatile("invlpg (%0)" : : "r"(addr) : "memory");
-	}
-	void* mmu_getphys_addr(void* virtualaddr) {
-		const uint16_t pdi = (uint32_t)virtualaddr >> 22;
-		const uint16_t pti = (uint32_t)virtualaddr >> 12 & 0x03ff;
-
-		if (!(pdir[pdi] & PDE_PRESENT)) return nullptr;
-		const uint32_t* pt = ptbl[pti];
-		if (!(pt[pti] & PTE_PRESENT)) return nullptr;
-		else return (void*)((pt[pti] & ~0xfff) + ((uint32_t)virtualaddr & 0xfff));
-	}
-	void mmu_map_page(void* physaddr, void* virtualaddr, uint16_t flags, bool flush) {
-		const uint32_t paddr = (uint32_t)physaddr & ~0xfff;
-		const uint32_t vaddr = (uint32_t)virtualaddr & ~0xfff;
-		const uint16_t pdi = vaddr >> 22;
-		const uint16_t pti = vaddr >> 12 & 0x03ff;
-
-		if (!(pdir[pdi] & PDE_PRESENT)) {
-			uint32_t pde = (uint32_t)(&ptbl[pdi]) << 12;
-			pde |= PDE_PRESENT | PDE_RW | PDE_WT;
-			pdir[pdi] = pde;
-		}
-		uint32_t* pt = ptbl[pti];
-		if (pt[pti] & PTE_PRESENT) {
-			// Page was already initialized
-		}
-		else {
-			pt[pti] = paddr | (flags & 0xfff) | 1;
-			if (flush) flush_tlb_single(paddr);
-		}
-	}
-	void reload_cr3(void);
-	void enable_mmu(void);
-	*/
 }
 
 
-
-
-extern "C"
+extern "C" {
+void mm_mmu_init(void);
 int mm_init(void) {
 	log(DEBUG, "mm_init();");
 	mm::gdt_init();
 	mm::idt_init();
-	mm::mmu_init();
 
 	return 0;
+}
 }

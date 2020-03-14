@@ -8,6 +8,7 @@ global ignore_ireq
 global handle_ireq%1
 handle_ireq%1:
 mov byte [intnum], byte (%1 + 0x20)
+push 0
 jmp int_bottom
 %endmacro
 
@@ -68,25 +69,55 @@ handle_excep 0x1D
 handle_excep 0x1E
 handle_excep 0x1F
 
+format: db "Hello Interrupts", 10, 0
+global handle_ireq0xA0
+extern handle_swi_0xA0
+handle_ireq0xA0:
+push edi
+push esi
+push edx
+push ecx
+push eax
+call handle_swi_0xA0
+add esp, byte 20
+iret
+
+
 int_bottom:
 
-pusha
 push ds
-push es
-push fs
-push gs
+;push es
+;push fs
+;push gs
 
+push ebp
+push edi
+push esi
+push edx
+push ecx
+push ebx
+push eax
 
+push esp
+push dword [esp + 40]
 movzx eax, byte [intnum]
 push eax
 call handle_interrupt
-add esp, 4
+mov esp, eax
 
-pop gs
-pop fs
-pop es
+pop eax
+pop ebx
+pop ecx
+pop edx
+pop esi
+pop edi
+pop ebp
+
+;pop gs
+;pop fs
+;pop es
 pop ds
-popa
+add esp, byte 4
 
 ignore_ireq:
 iret

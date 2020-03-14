@@ -36,6 +36,11 @@ long labs(long x);
 
 #ifdef __cplusplus
 }
+
+void* operator new(size_t size);
+void* operator new[](size_t size);
+void operator delete(void* ptr);
+void operator delete[](void* ptr);
 #endif
 
 #endif /* FILE_LIBC_STDLIB_H */

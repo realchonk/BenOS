@@ -1,10 +1,7 @@
-#include "arch/i386/drivers.hpp"
 #include "arch/i386/port.h"
+#include "driver.hpp"
 #include "printk.h"
 
-
-extern "C"
-void on_key(uint8_t scancode, int vkey, uint16_t mod, bool pressed);
 
 namespace io {
 	static const int keymap_de_DE[16][256] = {
@@ -44,7 +41,7 @@ namespace io {
 	static bool received0x60 = false;
 
 	KeyboardDriver::KeyboardDriver() noexcept
-		: InterruptHandler(0x21) {}
+		: InterruptHandler(0x21), Driver(DriverType::KEYBOARD) {}
 	bool KeyboardDriver::setup() noexcept {
 		while (inb(0x64) & 0x1) inb(0x60);
 		outb(0x64, 0xae);
@@ -94,14 +91,16 @@ namespace io {
 			received0x60 = false;
 		}
 		if (check_specialkey(scancode, data, pressed)) {
-			on_key(scancode, 0, 0, pressed);
+			if (on_key) on_key(scancode, 0, 0, pressed);
 			return;
 		}
 
 		const int mod = (alt_pressed << 3) | (altgr_pressed << 2) | (ctrl << 1) | (shift ^ shift_pressed);
 		const int ch = mapper[mod][scancode];
 
-		on_key(scancode, ch, mod, pressed);
+		if (on_key) on_key(scancode, ch, mod, pressed);
 	}
-
+	int KeyboardDriver::transform(uint8_t scancode, uint16_t mod) {
+		return mapper[mod][scancode];
+	}
 }

@@ -1,3 +1,4 @@
+#include "arch/i386/serial.h"
 #include <stdbool.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -8,8 +9,19 @@
 #include "math.h"
 #include "mm.h"
 
+#define PRINTK_SERIAL 1
+
+#if PRINTK_SERIAL
+#define kputc(ch) (serial_write(ch))
+#else
 #define kputc(ch) (terminal::putc(ch))
-#define kputs(str) (terminal::puts(str))
+#endif
+
+static size_t kputs(const char* str) {
+	size_t i;
+	for (i = 0; str[i]; ++i) kputc(str[i]);
+	return i;
+}
 
 static char* strnrvs(char* buf, size_t num) {
 	size_t start = 0, end = num - 1;
@@ -130,9 +142,10 @@ static int parse_int(const char* format, size_t& i) {
 }
 extern "C"
 int vprintk(const char* format, va_list ap) {
+	const uint8_t restore_color = terminal::get_color();
 	char buffer[200];
 	int written = 0;
-	int flags, width, prec, tmp, tmp2;
+	int flags, width, prec, tmp = 0, tmp2;
 	for (size_t i = 0; format[i]; ++i) {
 		char ch = format[i];
 		if (ch == '%') {
@@ -210,6 +223,23 @@ int vprintk(const char* format, va_list ap) {
 			case 'n':
 				*va_arg(ap, int*) = written;
 				break;
+			case '$': {
+				auto func = terminal::set_fgcolor;
+				bool bg = 0;
+				ch = format[++i];
+				if (ch == '!') ch = format[++i], bg = 1, func = terminal::set_bgcolor;
+				else if (toupper(ch) == 'R') {
+					terminal::set_color(restore_color);
+					break;
+				}
+				if (isdigit(ch)) func((terminal::VGA_Color)(ch - '0'));
+				else if (ch >= 'A' && ch <= 'F')
+					func((terminal::VGA_Color)(ch - 'A' + 10));
+				else if (ch >= 'a' && ch <= 'f')
+					func((terminal::VGA_Color)(ch - 'a' + 10));
+				else kputc('%'), kputc('$'), (bg ? kputc('!') : (void)0), kputc(ch);
+				break;
+			}
 			default:
 				kputs("error: invalid printk format! char = '");
 				kputc(ch);
@@ -219,6 +249,7 @@ int vprintk(const char* format, va_list ap) {
 		}
 		else kputc(format[i]), ++written;
 	}
+	terminal::set_color(restore_color);
 	return written;
 }
 extern "C"
@@ -233,11 +264,11 @@ void panic(const char* msg, ...) {
 	va_list ap;
 	disable_interrupts();
 	terminal::set_fgcolor(terminal::RED);
-	terminal::puts("*** PANIC ***: ");
+	kputs("*** PANIC ***: ");
 	va_start(ap, msg);
 	vprintk(msg, ap);
 	va_end(ap);
-	terminal::putc('\n');
+	kputc('\n');
 	while (1);
 }
 
@@ -262,15 +293,15 @@ void log(enum LogLevel ll, const char* format, ...) {
 	va_list ap;
 	terminal::set_bgcolor(terminal::BLACK);
 	terminal::set_fgcolor(terminal::GRAY);
-	terminal::putc('[');
+	kputc('[');
 	terminal::set_fgcolor(logcolors[(int)ll]);
-	terminal::puts(logstr[(int)ll]);
+	kputs(logstr[(int)ll]);
 	terminal::set_fgcolor(terminal::GRAY);
-	terminal::putc(']');
-	terminal::putc(' ');
+	kputc(']');
+	kputc(' ');
 	va_start(ap, format);
 	vprintk(format, ap);
 	va_end(ap);
-	terminal::putc('\n');
+	kputc('\n');
 	terminal::set_color(restore_color);
 }

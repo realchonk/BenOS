@@ -17,7 +17,7 @@ stack_top:
 section .text
 global _start:function (_start.end - _start)
 global cpu_reset:function (cpu_reset.end - cpu_reset)
-global abort:function (cpu_reset.end - abort)
+global abort:function (abort.end - abort)
 extern kernel_main
 extern _init
 extern _fini
@@ -43,11 +43,17 @@ _start:
 
 abort:
 cli
-mov byte [aborted], byte 1
-mov eax, cr0
-and eax, ~0x80000000
-mov cr0, eax
-jmp _start
+mov al, byte 0x02
+.l1:
+test al, byte 0x02
+jnz .l2
+in al, 0x64
+jmp .l1
+.l2:
+mov al, 0xfe
+out 0x64, al
+hlt
+.end:
 
 cpu_reset:
 cli
@@ -66,12 +72,13 @@ jnz .w2
 
 mov al, byte 0xfe
 out 0x60, al
-jmp $
+hlt
 .end:
 
 section .data
 aborted: db 0
 
 global heap
-section .heap
+section .bss
 heap:
+resb 4 << 20
